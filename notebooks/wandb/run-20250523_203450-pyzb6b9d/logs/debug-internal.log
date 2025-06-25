@@ -1,0 +1,16 @@
+{"time":"2025-05-23T20:34:50.651770723Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/aaron/src/first-aid/demo/firstaid/notebooks/wandb/run-20250523_203450-pyzb6b9d/logs/debug-core.log"}
+{"time":"2025-05-23T20:34:50.843382873Z","level":"INFO","msg":"created new stream","id":"pyzb6b9d"}
+{"time":"2025-05-23T20:34:50.843418753Z","level":"INFO","msg":"stream: started","id":"pyzb6b9d"}
+{"time":"2025-05-23T20:34:50.843458894Z","level":"INFO","msg":"sender: started","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:34:50.843461724Z","level":"INFO","msg":"writer: Do: started","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:34:50.843513105Z","level":"INFO","msg":"handler: started","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:34:50.92722133Z","level":"ERROR","msg":"HTTP error","status":422,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-05-23T20:34:50.927322402Z","level":"ERROR","msg":"sender: upsertRun:","error":"failed to upsert bucket: returned error 422: {\"data\":{\"upsertBucket\":null},\"errors\":[{\"message\":\"Error 3988 (HY000): Conversion from collation utf8mb4_0900_ai_ci into utf8mb3_general_ci impossible for parameter\",\"path\":[\"upsertBucket\"]}]}"}
+{"time":"2025-05-23T20:44:46.833787547Z","level":"INFO","msg":"stream: closing","id":"pyzb6b9d"}
+{"time":"2025-05-23T20:44:46.939804305Z","level":"ERROR","msg":"HTTP error","status":404,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-05-23T20:44:46.939892817Z","level":"ERROR","msg":"runfiles: CreateRunFiles returned error: returned error 404: {\"data\":{\"createRunFiles\":null},\"errors\":[{\"message\":\"run gemma3-12b-grpo-firstaid/pyzb6b9d not found during createRunFiles\",\"path\":[\"createRunFiles\"]}]}"}
+{"time":"2025-05-23T20:44:47.473948862Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-23T20:44:47.473983143Z","level":"INFO","msg":"handler: closed","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:44:47.473997323Z","level":"INFO","msg":"writer: Close: closed","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:44:47.474030944Z","level":"INFO","msg":"sender: closed","stream_id":"pyzb6b9d"}
+{"time":"2025-05-23T20:44:47.474057164Z","level":"INFO","msg":"stream: closed","id":"pyzb6b9d"}
