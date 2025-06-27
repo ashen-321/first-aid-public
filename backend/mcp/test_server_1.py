@@ -19,7 +19,7 @@ app = FastMCP("test1")
 started: bool = False
 
 @app.tool(description="Return num1 (odd) to the power of num2")
-async def odd_exponent(num1: int = 3, num2: int = 10) -> str:
+async def odd_exponent(num1: int, num2: int) -> str:
     logging.info(f"Finding {num1}^{num2}")
     """
     Return an odd number num1 to the power of num2

@@ -22,18 +22,35 @@ class MCPClient:
         self.openai = OpenAI()
         self.available_tools = []
 
-    async def connect_to_streamable_http_server(self, server_url: str, headers: Optional[dict] = None):
+    async def error_safe_request(self, request_function, request_args: list | tuple = []):
+        if not isinstance(request_args, list | tuple):
+            print(f"[error_safe_request: request_args must be a list or tuple, not {type(request_args)}.]")
+            
+        try:
+            result = await request_function(*request_args)
+            return result
+            
+        except (httpx.RemoteProtocolError, httpx.TimeoutException, httpx.NetworkError) as e:
+            print(f"[Network error with remote MCP server: {e}]")
+            
+        except (Exception) as e:
+            print(f"[Unknown error with remote MCP server: {e}]")
+
+    async def connect_to_streamable_http_server(self, server_url: str, headers: dict = {}):
         """Connect to an MCP server running with HTTP Streamable transport"""
-        self._streams_context = streamablehttp_client(  # pylint: disable=W0201
+        self._streams_context = streamablehttp_client(
             url=server_url,
-            headers=headers or {},
+            headers=headers,
         )
-        read_stream, write_stream, _ = await self._streams_context.__aenter__()  # pylint: disable=E1101
+        async def session_init():
+            read_stream, write_stream, _ = await self._streams_context.__aenter__()
 
-        self._session_context = ClientSession(read_stream, write_stream)  # pylint: disable=W0201
-        self.session: ClientSession = await self._session_context.__aenter__()  # pylint: disable=C2801
-
-        await self.session.initialize()
+            self._session_context = ClientSession(read_stream, write_stream)
+            self.session: ClientSession = await self._session_context.__aenter__()
+    
+            await self.session.initialize()
+        
+        await self.error_safe_request(session_init)
 
     async def get_available_tools(self):
         """Get available tools from the server"""
@@ -57,10 +74,11 @@ class MCPClient:
         self.available_tools = available_tools
 
     async def process_query(self, query: str) -> str:
-        """Process a query using Claude and available tools"""
+        """Process a query using LLMs and available tools"""
         messages = [{"role": "user", "content": query}]
 
-        await self.get_available_tools()
+        # Get tools list
+        await self.error_safe_request(self.get_available_tools)
 
         # Initial OpenAI API call
         response = self.openai.chat.completions.create(
@@ -80,10 +98,15 @@ class MCPClient:
                 tool_args = eval(call.function.arguments)
                 
                 # Execute tool call
-                result = await self.session.call_tool(tool_name, tool_args)
-                print(f"[Calling tool {tool_name} with args {tool_args} to get {result}]")
-    
+                print(f"[Calling tool {tool_name} with args {tool_args}]")
+                result = await self.error_safe_request(self.session.call_tool, (tool_name, tool_args))
+
+                # Exit if tool call errored
+                if result is None:
+                    break
+                
                 # Continue conversation with tool results
+                print(f"[Tool call returned {result}]")
                 if result.isError:
                     print(f"Tool call failed with error {result.content[0].text}")
                 else:

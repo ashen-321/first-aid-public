@@ -9,9 +9,21 @@ from starlette.applications import Starlette
 from mcp.server.sse import SseServerTransport
 from starlette.routing import Mount, Route
 import uvicorn
+import os
+import sys
+
+module_paths = ["./", "../"]
+file_path = os.path.dirname(__file__)
+os.chdir(file_path)
+
+for module_path in module_paths:
+    full_path = os.path.normpath(os.path.join(file_path, module_path))
+    sys.path.append(full_path)
 
 from mcp_client import MCPClient
 from master_server_client import MasterServerClient
+from orchestration import Orchestration
+from agents import set_agent_config
 
 
 # Set up logging
@@ -20,73 +32,55 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Initialize FastMCP server
 app = FastMCP("master_server")
 
-
-def route_query(query: str):
-    print(f'\n--- Selecting tools ---\n')
-    
-    tool_selection = ["github", "arxiv", "medrxiv"]
-
-    llm = ChatOpenAI(
-        model=config['model_id'],
-        temperature=1.0,
-        max_tokens=None,
-        timeout=None,
-        max_retries=5,
-    )
-
-    messages = [
-        ("system", 
-            'You are a seasoned medical expert. Your role is to determine the specificity of the query and decide whether or not online information is sufficient to resolve the query. Respond with either a "YES", "NO", or "UNCLEAR" based on if online information is adequate. Do not output anything else besides those three options. Output in all capital letters.'
-        ),
-        ("human", state['rewritten_question']),
-    ]
-
-    response = llm.invoke(messages).content
-    print(f'Tools router response: {response}')
-    
-    if "YES" in response:
-        tool_selection = ["web_search_node"]
-    elif "NO" in response:
-        tool_selection = ["pubmed_node", "medrxiv_node"]
-    else:
-        tool_selection = ["pubmed_node"]
-    # Use all three tools if unclear
-
-    return {'tools_requested': tool_selection}
-
-@app.tool(description="Search github, arxiv, and medrxiv")
-async def mcp_search(query: str) -> str:
-    logging.info(f"Querying MCP servers...")
-
-    
+# Initialize orchestration graph
+orch = Orchestration()
 
 # @app.tool(description="Return num1 to the power of num2")
-async def any_exponent(num1: int = 2, num2: int = 10) -> str:
-    logging.info(f"Finding {num1}^{num2}")
+# async def any_exponent(num1: int = 2, num2: int = 10) -> str:
+#     logging.info(f"Finding {num1}^{num2}")
     
-    """
-    Return num1 to the power of num2
+#     """
+#     Return num1 to the power of num2
 
-    Args:
-        num1: the base to raise by num2
-        num1: the exponent to raise num1 to
+#     Args:
+#         num1: the base to raise by num2
+#         num1: the exponent to raise num1 to
 
-    Returns:
-        String representing answer numerically
-    """
+#     Returns:
+#         String representing answer numerically
+#     """
 
-    tool_args = {'num1': num1, 'num2': num2}
+#     tool_args = {'num1': num1, 'num2': num2}
     
-    if num1 % 2:
-        logging.info(f"[Calling tool odd_exponent from server 1 with args {tool_args}]")
-        result = await master_server_client.call_tool('test_server_1', 'odd_exponent', tool_args)
-    else:
-        logging.info(f"[Calling tool even_exponent from server 2 with args {tool_args}]")
-        result = await master_server_client.call_tool('test_server_2', 'even_exponent', tool_args)
+#     if num1 % 2:
+#         result = await master_server_client.call_tool('test_server_1', 'odd_exponent', tool_args)
+#     else:
+#         result = await master_server_client.call_tool('test_server_2', 'even_exponent', tool_args)
 
-    # Process and return response
-    logging.info(f'Result: {result}')
-    return result.content[0].text
+#     # Process and return response
+#     logging.info(f'Result: {result}')
+#     return result.content[0].text
+
+# @app.tool(description="Automatically call MCP servers and access tools depending on the input query.")
+# @app.tool(description="Use this tool to find the exponent between two numbers. Input the base, then a carrot, then the exponent in a single string.")
+@app.tool(description="Use this tool to search github and arxiv for relevant data and resources.")
+async def access_sub_mcp(query: str):
+    logging.info(f'Collecting tool information for query: {query}')
+
+    set_agent_config({
+        "tools": master_server_client.available_tools_flattened, 
+    })
+
+    orch.set_master_server_client(master_server_client)
+
+    result = await orch.graph.ainvoke(
+        {"question": query},
+        {"recursion_limit": 30},
+    )
+    logging.info(f'Orchestration result: {result}')
+
+    return result['answer']
+    
 
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
@@ -123,12 +117,12 @@ async def initialize_interserver_comms():
     master_server_client = MasterServerClient()
 
     try:
-        # await master_server_client.connect_to_server("http://localhost:8091/mcp", 'test_server_1')
-        # await master_server_client.connect_to_server("http://localhost:8092/mcp", 'test_server_2')
+        await master_server_client.connect_to_server("http://localhost:8091/mcp", 'test_server_1')
+        await master_server_client.connect_to_server("http://localhost:8092/mcp", 'test_server_2')
 
-        await master_server_client.connect_to_server("http://agent.cavatar.info:8080/mcp", 'github')
-        await master_server_client.connect_to_server("http://infs.cavatar.info:8084/mcp", 'arxiv')
-        await master_server_client.connect_to_server("http://infs.cavatar.info:8083/mcp", 'medrxiv')
+        # await master_server_client.connect_to_server("http://agent.cavatar.info:8080/mcp", 'github')
+        # await master_server_client.connect_to_server("http://infs.cavatar.info:8084/mcp", 'arxiv')
+        # await master_server_client.connect_to_server("http://infs.cavatar.info:8083/mcp", 'medrxiv')
         
         await master_server_client.server_loop()
     finally:

@@ -2,7 +2,6 @@ from typing import Optional
 from mcp import ClientSession
 import mcp.types
 from mcp.client.streamable_http import streamablehttp_client
-# from openai import OpenAI
 from openai.types import Completion
 import os
 import asyncio
@@ -17,6 +16,10 @@ model_id_llama = "meta.llama3-3-70b-instruct-v1:0"
 os.environ["OPENAI_API_KEY"] = api_key = os.getenv("bedrock_api_token")
 os.environ["OPENAI_BASE_URL"] = base_url = os.getenv("bedrock_api_url")
 
+file_path = os.path.dirname(__file__)
+
+TOOL_NAME_ORIGIN_SEPARATOR = '090909090'
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -28,27 +31,41 @@ class MasterServerClient:
         self.sessions = {}
         self._streams_contexts = {}
         self._session_contexts = {}
-        # self.openai = OpenAI()
         self.available_tools = {}
+        self.available_tools_flattened = []
         self._sub_server_popens = {}
+
+    # async def retry_with_timeout(self, request_function, request_args, timeout: int = 10):
+        
 
     async def check_if_server_running(self, server_url: str, server_filename: str):
         try:
             # Send request to see if the server is already running
             async with httpx.AsyncClient(timeout=30.0) as client:
-                logging.debug(f"HTTP GET attempt to {server_url}")
+                logging.info(f"HTTP GET attempt to {server_url}")
                 
                 response = await client.get(server_url)
                 response.raise_for_status()
 
                 # Exit if already running
                 return True
+
+        except (httpx.HTTPStatusError) as e:
+            # Exit if sent a redirect error (normal behavior)
+            return True
                 
-        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
             logging.warning(f"HTTP request attempt failed: {type(e).__name__}: {e}")
-            logging.info(f"Sending start command for {server_filename}...")
+
+            # Exit if the server is not present in the folder
+            os.chdir(file_path)
+            full_path = os.path.normpath(os.path.join(file_path, f'{server_filename}.py'))
+
+            if not os.path.exists(full_path):
+                return False
 
             # Run start command to start the server
+            logging.info(f"Sending start command for {server_filename}...")
             # No temporary variable to avoid deep copying
             self._sub_server_popens[server_filename] = Popen(['python', f'{server_filename}.py'])
 
@@ -85,6 +102,7 @@ class MasterServerClient:
             logging.error(f"Unexpected error in HTTP request: {e}")
             return False
 
+    
     async def connect_to_server(self, server_url: str, server_filename: str, headers: dict = {}):
         """Connect to an MCP server running on streamable HTTP"""
         # Exit if the server is not running despite attempts to start it
@@ -109,6 +127,7 @@ class MasterServerClient:
 
         logging.info(f"Connected to server {server_filename} at {server_url}.")
 
+    
     async def get_available_tools(self, server_filename: str):
         """Get available tools from the server"""
         try:
@@ -122,7 +141,7 @@ class MasterServerClient:
                 {
                     "type": 'function',
                     "function": {
-                        "name": tool.name,
+                        "name": f"{tool.name}{TOOL_NAME_ORIGIN_SEPARATOR}{server_filename}",
                         "description": tool.description,
                         "parameters": tool.inputSchema,
                     },
@@ -131,26 +150,50 @@ class MasterServerClient:
                 for tool in response.tools
             ]
             self.available_tools[server_filename] = available_tools
+            self.available_tools_flattened.extend(available_tools)
+            
         except Exception as e:
-            logging.error(f'Tool fetch for server {server_filename} failed.')
+            logging.error(f'Tool fetch for server {server_filename} failed: {e}')
             
             # Blank list failsafe in case the tool fetch fails
             self.available_tools[server_filename] = []
 
-    async def call_tool(self, server_filename: str, tool_name: str, tool_args: Optional[dict]):
+            
+    # async def compile_all_tools(self, app):
+    #     logging.info(f"Compiling all available tools...")
+
+    #     for server in self.available_tools:
+    #         for tool in self.available_tools[server]:
+    #             # Define a relay function to pass along tool calls to the sub-servers
+    #             def relay_tool_call():
+    #                 self.call_tool()
+                
+    #             app.add_tool(
+    #                 fn,
+    #                 name=tool['function']['name'],
+    #                 description=['function']['description'],
+    #                 annotations=annotations,
+    #                 structured_output=structured_output,
+    #             )
+
+                
+    async def call_tool(self, tool_name: str, tool_args: Optional[dict]):
+        tool_name, server_filename = tool_name.split(TOOL_NAME_ORIGIN_SEPARATOR)
         logging.info(f"Calling tool {tool_name} from {server_filename} with args {tool_args}...")
 
         try:
             # Call tool
-            return await self.sessions[server_filename].call_tool(tool_name, tool_args)
+            result = await self.sessions[server_filename].call_tool(tool_name, tool_args)
+            return result
         except Exception as e:
             # Remove tool from server tool list
             if tool_name in self.available_tools[server_filename]:
                 self.available_tools[server_filename].remove(tool_name)
             
             logging.error(f"Tool {tool_name} from {server_filename} is currently unavailable:")
-            raise Exception(e)
+            # raise Exception(e)`
 
+    
     async def server_loop(self):
         while True:
             try:
@@ -158,6 +201,7 @@ class MasterServerClient:
             except Exception as e:
                 logging.error(f"\nServer loop error: {str(e)}")
 
+    
     async def cleanup(self):
         """Properly clean up the sessions and streams"""
         if self._sub_server_popens:

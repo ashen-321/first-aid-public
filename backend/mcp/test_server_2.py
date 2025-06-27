@@ -19,7 +19,7 @@ app = FastMCP("test2")
 started: bool = False
 
 @app.tool(description="Return num1 (even) to the power of num2")
-async def even_exponent(num1: int = 2, num2: int = 10) -> str:
+async def even_exponent(num1: int, num2: int) -> str:
     logging.info(f"Finding {num1}^{num2}")
     """
     Return an even number num1 to the power of num2
