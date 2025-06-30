@@ -9,31 +9,44 @@ from starlette.applications import Starlette
 from mcp.server.sse import SseServerTransport
 from starlette.routing import Mount, Route
 import uvicorn
+import os
+import sys
+
+module_paths = ["./", "../scripts"]
+file_path = os.path.dirname(__file__)
+os.chdir(file_path)
+
+for module_path in module_paths:
+    full_path = os.path.normpath(os.path.join(file_path, module_path))
+    sys.path.append(full_path)
+
+from reasoning_finance_advisor import reasoning_finance_team
 
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Initialize FastMCP server
-app = FastMCP("test2")
+app = FastMCP("finance")
 started: bool = False
 
-@app.tool(description="Return num1 (even) to the power of num2")
-async def even_exponent(num1: int, num2: int) -> str:
-    logging.info(f"Finding {num1}^{num2}")
-    """
-    Return an even number num1 to the power of num2
+@app.tool(description="Get finance and stock information using up-to-date information via a team of AI agents.")
+async def finance_request(query: str) -> str:
+    logging.info(f"Getting finance recommendation for query '{query}'")
 
-    Args:
-        num1: the base to raise by num2
-        num1: the exponent to raise num1 to
+    response = reasoning_finance_team.run(query, stream=False).content
+    logging.info(f'Response: {response}')
+    
+    return response
 
-    Returns:
-        List of dictionaries containing status information
-    """
+# @app.tool(description="Get finance, stock, and general news-related recommendations using up-to-date information via a team of AI agents.")
+# async def finance_request(query: str) -> str:
+#     logging.info(f"Getting finance recommendation for query '{query}'")
 
-    return num1 ** num2
-
+#     response = next(reasoning_finance_team.run(query, stream=True)).content
+#     logging.info(f'Streamed response: {response}')
+    
+#     yield response
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
     """Create a Starlette application that can serve the provided mcp server with SSE."""
@@ -66,7 +79,7 @@ def startup():
         return
 
     started = True
-    app.run(transport="streamable-http",host="0.0.0.0",port=8092)
+    app.run(transport="streamable-http",host="0.0.0.0",port=8093)
 
 if __name__ == '__main__':
     startup()

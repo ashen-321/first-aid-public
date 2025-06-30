@@ -63,15 +63,14 @@ orch = Orchestration()
 
 # @app.tool(description="Automatically call MCP servers and access tools depending on the input query.")
 # @app.tool(description="Use this tool to find the exponent between two numbers. Input the base, then a carrot, then the exponent in a single string.")
-@app.tool(description="Use this tool to search github and arxiv for relevant data and resources.")
+@app.tool()
 async def access_sub_mcp(query: str):
     logging.info(f'Collecting tool information for query: {query}')
 
     set_agent_config({
-        "tools": master_server_client.available_tools_flattened, 
+        "tools": master_server_client.available_tools_flattened,
+        "master_server_client": master_server_client
     })
-
-    orch.set_master_server_client(master_server_client)
 
     result = await orch.graph.ainvoke(
         {"question": query},
@@ -79,19 +78,20 @@ async def access_sub_mcp(query: str):
     )
     logging.info(f'Orchestration result: {result}')
 
-    return result['answer']
-    
+    return result.get('external_data')
+
+logging.info(app._tool_manager._tools)
 
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
-    """Create a Starlette application that can server the provied mcp server with SSE."""
+    """Create a Starlette application that can serve the provided mcp server with SSE."""
     sse = SseServerTransport("/messages/")
 
     async def handle_sse(request: Request) -> None:
         async with sse.connect_sse(
                 request.scope,
                 request.receive,
-                request._send,  # noqa: SLF001
+                request._send,
         ) as (read_stream, write_stream):
             await mcp_server.run(
                 read_stream,
@@ -114,11 +114,12 @@ master_server_client = None
 async def initialize_interserver_comms():
     global master_server_client
     
-    master_server_client = MasterServerClient()
+    master_server_client = MasterServerClient(app)
 
     try:
-        await master_server_client.connect_to_server("http://localhost:8091/mcp", 'test_server_1')
-        await master_server_client.connect_to_server("http://localhost:8092/mcp", 'test_server_2')
+        # await master_server_client.connect_to_server("http://localhost:8091/mcp", 'test_server_1')
+        # await master_server_client.connect_to_server("http://localhost:8092/mcp", 'test_server_2')
+        await master_server_client.connect_to_server("http://localhost:8093/mcp", 'finance_server')
 
         # await master_server_client.connect_to_server("http://agent.cavatar.info:8080/mcp", 'github')
         # await master_server_client.connect_to_server("http://infs.cavatar.info:8084/mcp", 'arxiv')

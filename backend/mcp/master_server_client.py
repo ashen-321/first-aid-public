@@ -4,6 +4,7 @@ import mcp.types
 from mcp.client.streamable_http import streamablehttp_client
 from openai.types import Completion
 import os
+import sys
 import asyncio
 import httpx
 import logging
@@ -16,17 +17,39 @@ model_id_llama = "meta.llama3-3-70b-instruct-v1:0"
 os.environ["OPENAI_API_KEY"] = api_key = os.getenv("bedrock_api_token")
 os.environ["OPENAI_BASE_URL"] = base_url = os.getenv("bedrock_api_url")
 
+module_paths = ["./", "../"]
 file_path = os.path.dirname(__file__)
+os.chdir(file_path)
 
-TOOL_NAME_ORIGIN_SEPARATOR = '090909090'
+for module_path in module_paths:
+    full_path = os.path.normpath(os.path.join(file_path, module_path))
+    sys.path.append(full_path)
+
+from agents import set_agent_config
+
+
+# --------------------------------------------------------------------------------------------
+# Config -------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
+
+
+TOOL_NAME_ORIGIN_SEPARATOR = '09090'
+MASTER_TOOL_DESCRIPTION_HEADER = 'Automatically interface with other MCP servers for the following tools:'
+MASTER_DISPATCHER_SYSTEM_HEADER = "You are a tool dispatcher agent who decides which tools to dispatch to based on the user's input. Depending on your answer, question will be routed to the right tools, so your task is crucial."
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+# --------------------------------------------------------------------------------------------
+# Master Server Client Class -----------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
+
+
 class MasterServerClient:
     """MCP Client for interacting with an MCP Streamable HTTP server"""
 
-    def __init__(self):
+    def __init__(self, app):
         # Initialize session and client objects
         self.sessions = {}
         self._streams_contexts = {}
@@ -34,6 +57,7 @@ class MasterServerClient:
         self.available_tools = {}
         self.available_tools_flattened = []
         self._sub_server_popens = {}
+        self._app = app
 
     # async def retry_with_timeout(self, request_function, request_args, timeout: int = 10):
         
@@ -86,6 +110,7 @@ class MasterServerClient:
                         # Try again in 0.5 seconds if the request failed
                         logging.warning(f"HTTP request attempt {attempt_count} failed: {type(e).__name__}: {e}")
                         logging.info(f"Waiting 0.5 seconds...")
+                        attempt_count += 1
                         await asyncio.sleep(0.5)
                         
                     except (httpx.HTTPStatusError) as e:
@@ -149,8 +174,13 @@ class MasterServerClient:
                 }
                 for tool in response.tools
             ]
+
+            # Save tools
             self.available_tools[server_filename] = available_tools
             self.available_tools_flattened.extend(available_tools)
+
+            # Compile tool descriptions into the master server tool description
+            self.compile_tool_descriptions()
             
         except Exception as e:
             logging.error(f'Tool fetch for server {server_filename} failed: {e}')
@@ -159,22 +189,25 @@ class MasterServerClient:
             self.available_tools[server_filename] = []
 
             
-    # async def compile_all_tools(self, app):
-    #     logging.info(f"Compiling all available tools...")
+    def compile_tool_descriptions(self):
+        logging.info("Compiling all available tool descriptions...")
 
-    #     for server in self.available_tools:
-    #         for tool in self.available_tools[server]:
-    #             # Define a relay function to pass along tool calls to the sub-servers
-    #             def relay_tool_call():
-    #                 self.call_tool()
-                
-    #             app.add_tool(
-    #                 fn,
-    #                 name=tool['function']['name'],
-    #                 description=['function']['description'],
-    #                 annotations=annotations,
-    #                 structured_output=structured_output,
-    #             )
+        # Generate description based on sub mcp server tool descriptions
+        tool_description = MASTER_TOOL_DESCRIPTION_HEADER
+        dispatcher_system_message = f'{MASTER_DISPATCHER_SYSTEM_HEADER}\nThere are {len(self.available_tools_flattened)} possible tools to use:' 
+
+        for server in self.available_tools:
+            for tool in self.available_tools[server]:
+                tool_description += f'\n{tool['function']['description']}'
+                dispatcher_system_message += f'\n - {tool['function']['name']}: {tool['function']['description']}'
+
+        # Save description directly to tool
+        logging.info(f"Compiled description: {tool_description}")
+        self._app._tool_manager._tools.get('access_sub_mcp').description = tool_description
+
+        # Save dispatcher node system message to orchestration
+        dispatcher_system_message += "Always call at least one tool. Do not attempt to generate your own response to the user's query."
+        set_agent_config({'dispatcher_system_message': dispatcher_system_message})
 
                 
     async def call_tool(self, tool_name: str, tool_args: Optional[dict]):
@@ -191,8 +224,7 @@ class MasterServerClient:
                 self.available_tools[server_filename].remove(tool_name)
             
             logging.error(f"Tool {tool_name} from {server_filename} is currently unavailable:")
-            # raise Exception(e)`
-
+            # raise Exception(e)
     
     async def server_loop(self):
         while True:
