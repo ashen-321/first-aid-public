@@ -77,7 +77,7 @@ class MCPClient:
         """Process a query using LLMs and available tools"""
 
         # ---------------------------
-        query = "Based on President Trump's recent social media posts and announcements, recommend an investment portfolio by calling out the companies and amount to invest for $100K with targetted return at 7.5% annual with risk tolerance at high level. Use the tools to assist in your research."
+        # query = "Based on President Trump's recent social media posts and announcements, recommend an investment portfolio by calling out the companies and amount to invest for $100K with targetted return at 7.5% annual with risk tolerance at high level. Use the tools to assist in your research."
         # ---------------------------
         
         messages = [{"role": "user", "content": query}]
